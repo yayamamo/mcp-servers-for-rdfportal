@@ -4,6 +4,7 @@ import json
 import sys
 from mcp.server.fastmcp import FastMCP
 from typing import List, Dict
+import xml.etree.ElementTree as ET
 
 server = FastMCP("RDF Portal MCP Server")
 
@@ -431,6 +432,45 @@ def get_shex() -> str:
     with open("/Users/yayamamo/git/mcp-sparql/uniprot.shexj", "r") as file:
         shex = file.read()
     return shex
+
+@server.tool()
+async def get_pubmed_info(pubmed_id: str) -> str:
+    """
+    Obtain PubMed citation or bibliographic data
+    
+    Args: PubMed IDs, separated by a comma if more than one ID
+    
+    Returns: Corresponding PubMed information in JSON
+    """
+    async with httpx.AsyncClient() as client:
+        response = await client.get("https://togows.org/entry/pubmed/" + pubmed_id + '.json')
+    response.raise_for_status()
+    result = response.json()
+    return json.dumps(result)
+
+@server.tool()
+async def search_pubmed_articles(pubmed_query: str) -> str:
+    """
+    Obtain PubMed ID list of papers relevant to the given query
+    
+    Args: PubMed compliant query
+    
+    Returns: A list of PubMed IDs in JSON
+    """
+    entrez_endpoint = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/'
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            entrez_endpoint + '/esearch.fcgi', params={'db': 'pubmed', 'term': pubmed_query, 'usehistory': 'n'}
+        )
+    response.raise_for_status()
+    if response.is_success:
+        tree = ET.ElementTree(ET.fromstring(response.text))
+        root = tree.getroot()
+        # Extract all <Id> elements under <IdList>
+        ids = [elem.text for elem in root.find("IdList").findall("Id")]
+    else:
+        ids = []
+    return json.dumps(ids)
 
 if __name__ == "__main__":
     server.run()
