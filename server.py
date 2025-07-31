@@ -5,11 +5,11 @@ import sys
 from mcp.server.fastmcp import FastMCP
 from typing import List, Dict
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 
 server = FastMCP("RDF Portal MCP Server")
 
-uniprot_prefixes = '''
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+uniprot_prefixes = '''PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 PREFIX wikibase: <http://wikiba.se/ontology#>
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
 PREFIX wd: <http://www.wikidata.org/entity/>
@@ -76,45 +76,7 @@ PREFIX bibo: <http://purl.org/ontology/bibo/>
 PREFIX allie: <http://allie.dbcls.jp/>
 '''
 
-sparql_endpoint = {
-    "uniprot": "https://rdfportal.org/backend/sib/sparql",
-    "pubchem": "https://rdfportal.org/backend/pubchem/sparql"
-}
-
-get_proerty_query = '''
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX owl: <http://www.w3.org/2002/07/owl#>
-
-SELECT ?property
-from <http://sparql.uniprot.org/core>
-where {
-  values ?property_type { owl:ObjectProperty owl:DatatypeProperty }
-  values ?property_label { "__QUERY_STR__"^^xsd:string }
-  ?property a ?property_type ;
-  rdfs:label ?property_label .
-}
-'''
-
-get_property_list_query = '''
-SELECT DISTINCT ?pred WHERE {
-  VALUES ?subj { <__URI__> }
-  ?subj ?pred ?obj .
-}'''
-
-get_class_list_query = '''
-PREFIX owl: <http://www.w3.org/2002/07/owl#>
-PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT DISTINCT ?class
-from <http://sparql.uniprot.org/core>
-WHERE {
- ?class a owl:Class.
-  FILTER (! isBlank(?class) )
-}'''
-
-pubchem_prefixes = '''
-PREFIX owl: <http://www.w3.org/2002/07/owl#>
+pubchem_prefixes = '''PREFIX owl: <http://www.w3.org/2002/07/owl#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
@@ -188,11 +150,126 @@ PREFIX wd: <http://www.wikidata.org/entity/>
 
 sparql_endpoint = {
     "uniprot": "https://rdfportal.org/backend/sib/sparql",
-    "pubchem": "https://rdfportal.org/backend/pubchem/sparql"
+    "pubchem": "https://rdfportal.org/backend/pubchem/sparql",
+    "primary": "https://rdfportal.org/backend/primary/sparql",
+    "fedx":    "https://plod.dbcls.jp/repositories/RDF_Portal"
 }
 
-get_proerty_query = '''
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+equivalent_prefix_pairs = [
+      ['http://rdf.ncbi.nlm.nih.gov/pubchem/inchikey/', 'http://identifiers.org/inchikey/'],
+      ['http://identifiers.org/inchikey/', 'http://rdf.ncbi.nlm.nih.gov/pubchem/inchikey/'],
+      ['http://rdf.ncbi.nlm.nih.gov/pubchem/compound/', 'http://identifiers.org/pubchem.compound/'],
+      ['http://rdf.ncbi.nlm.nih.gov/pubchem/gene/GID', 'http://identifiers.org/ncbigene/'],
+      ['http://bio2rdf.org/geneid:', 'http://identifiers.org/ncbigene/'],
+      ['http://glycosmos.org/glycogene/', 'http://identifiers.org/ncbigene/'],
+      ['http://identifiers.org/ctd.gene/', 'http://identifiers.org/ncbigene/'],
+      ['http://purl.uniprot.org/geneid/', 'http://identifiers.org/ncbigene/'],
+      ['http://linkedlifedata.com/resource/entrezgene/id/', 'http://identifiers.org/ncbigene/'],
+      ['http://identifiers.org/genewiki/', 'http://identifiers.org/ncbigene/'],
+      ['http://rdf.ncbi.nlm.nih.gov/pubchem/protein/ACC', 'http://identifiers.org/uniprot/'],
+      ['http://purl.uniprot.org/uniprot/', 'http://rdf.ncbi.nlm.nih.gov/pubchem/protein/ACC'],
+      ['http://purl.uniprot.org/uniprot/', 'http://identifiers.org/uniprot/'],
+      ['http://identifiers.org/ncbiprotein:', 'http://identifiers.org/uniprot/'],
+      ['http://identifiers.org/uniprot:', 'http://identifiers.org/uniprot/'],
+      ['http://rdf.ncbi.nlm.nih.gov/pubchem/protein/EC_', 'http://identifiers.org/ec-code/'],
+      ['http://purl.uniprot.org/enzyme/', 'http://identifiers.org/ec-code/'],
+      ['http://rdf.ncbi.nlm.nih.gov/pubchem/taxonomy/TAXID', 'http://identifiers.org/taxonomy/'],
+      ['http://purl.obolibrary.org/obo/NCBITaxon_', 'http://identifiers.org/taxonomy/'],
+      ['http://ddbj.nig.ac.jp/ontologies/taxonomy/', 'http://identifiers.org/taxonomy/'],
+      ['http://purl.org/obo/owl/NCBITaxon#', 'http://identifiers.org/taxonomy/'],
+      ['http://www.berkeleybop.org/ontologies/owl/NCBITaxon#', 'http://identifiers.org/taxonomy/'],
+      ['http://purl.uniprot.org/taxonomy/', 'http://identifiers.org/taxonomy/'],
+      ['http://purl.uniprot.org/intact/', 'http://identifiers.org/intact/'],
+      ['https://www.ebi.ac.uk/intact/search?query=', 'http://identifiers.org/intact/'],
+      ['http://purl.obolibrary.org/obo/CHEBI_', 'http://identifiers.org/CHEBI:'],
+      ['http://purl.obolibrary.org/obo/DOID_', 'http://identifiers.org/DOID:'],
+      ['http://bioportal.bioontology.org/ontologies/DOID/DOID:', 'http://identifiers.org/DOID:'],
+      ['http://glycosmos.org/disease/DOID:', 'http://identifiers.org/DOID:'],
+      ['http://purl.obolibrary.org/obo/GO_', 'http://identifiers.org/GO:'],
+      ['http://identifiers.org/obo.go/GO:', 'http://identifiers.org/GO:'],
+      ['http://purl.obolibrary.org/obo/HP_', 'http://identifiers.org/HP:'],
+      ['http://linkedlifedata.com/resource/phenotype/id/HP:', 'http://identifiers.org/HP:'],
+      ['http://purl.obolibrary.org/obo/MONDO_', 'https://identifiers.org/mondo:'],
+      ['http://purl.obolibrary.org/obo/NCIT_', 'http://identifiers.org/ncit:'],
+      ['http://purl.obolibrary.org/obo/UBERON_', 'http://identifiers.org/UBERON:'],
+      ['http://uri.neuinfo.org/nif/nifstd/UBERON_', 'http://identifiers.org/UBERON:'],
+      ['http://rdf.ebi.ac.uk/resource/ensembl/', 'http://identifiers.org/ensembl/'],
+      ['http://icgc.link/Gene/', 'http://identifiers.org/ensembl/'],
+      ['http://identifiers.org/fb/', 'http://identifiers.org/ensembl/'],
+      ['http://identifiers.org/wb/', 'http://identifiers.org/ensembl/'],
+      ['http://rdf.ebi.ac.uk/resource/chembl/molecule/', 'http://identifiers.org/chembl.compound/'],
+      ['http://rdf.ebi.ac.uk/resource/ensembl/LRG_', 'http://identifiers.org/lrg/LRG_'],
+      ['https://www.ebi.ac.uk/interpro/protein/reviewed/', 'http://identifiers.org/interpro/'],
+      ['http://rdf.ncbi.nlm.nih.gov/pubmed/', 'http://identifiers.org/pubmed/'],
+      ['http://linkedlifedata.com/resource/pubmed/id/', 'http://identifiers.org/pubmed/'],
+      ['http://identifiers.org/pubmed:', 'http://identifiers.org/pubmed/'],
+      ['http://id.nlm.nih.gov/mesh/', 'http://identifiers.org/mesh/'],
+      ['http://purl.jp/bio/101/opentggates/Probe/', 'http://identifiers.org/affy.probeset/'],
+      ['http://www.ensembl.org/Homo_sapiens/Variation/Explore?v=', 'http://identifiers.org/dbsnp/'],
+      ['http://bio2rdf.org/dbsnp:', 'http://identifiers.org/dbsnp/'],
+      ['http://www.ncbi.nlm.nih.gov/SNP/snp_ref.cgi?rs=', 'http://identifiers.org/dbsnp/'],
+      ['http://www.snpedia.com/index.php/', 'http://identifiers.org/dbsnp/'],
+      ['http://www.ncbi.nlm.nih.gov/clinvar/?term=', 'http://identifiers.org/dbsnp/'],
+      ['https://www.bgee.org/bgee15_1/gene/', 'http://identifiers.org/oma.grp/'],
+      ['http://omabrowser.org/ontology/oma#GENE_', 'http://identifiers.org/oma.grp/'],
+      ['http://rdf.glycoinfo.org/glycan/', 'http://identifiers.org/glytoucan/'],
+      ['http://www.glytoucan.org/Structures/Glycans/', 'http://identifiers.org/glytoucan/'],
+      ['http://glytoucan.org/Structures/Glycans/', 'http://identifiers.org/glytoucan/'],
+      ['http://purl.obolibrary.org/obo/GNO_', 'http://identifiers.org/glytoucan/'],
+]
+
+class UnionFind:
+    def __init__(self):
+        self.parent = {}
+
+    def find(self, x):
+        # xが初めて出てきたら、自分自身を親に設定
+        if x not in self.parent:
+            self.parent[x] = x
+        # 経路圧縮
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent[x]
+
+    def union(self, a, b):
+        # find() を呼ぶ前に初期化されていることを保証
+        root_a = self.find(a)
+        root_b = self.find(b)
+        if root_a != root_b:
+            self.parent[root_a] = root_b
+
+
+# 同義グループ構築
+uf = UnionFind()
+for a, b in equivalent_prefix_pairs:
+    uf.union(a, b)
+
+# グループ辞書
+from collections import defaultdict
+groups = defaultdict(set)
+for prefix in uf.parent:
+    groups[uf.find(prefix)].add(prefix)
+
+prefix_to_group = {}
+for group in groups.values():
+    for p in group:
+        prefix_to_group[p] = group
+
+# --- 2. マッチするprefixを探して置換 ---
+# URI変換関数
+def _get_equivalent_uris(uri):
+    for prefix in prefix_to_group:
+        if uri.startswith(prefix):
+            suffix = uri[len(prefix):]
+            return [p + suffix for p in prefix_to_group[prefix]]
+    return [uri]
+
+get_property_values_query = '''SELECT ?property ?value
+WHERE { <__QUERY_URI__> ?property ?value . }
+LIMIT 200
+'''
+
+get_property_query = '''PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX owl: <http://www.w3.org/2002/07/owl#>
 
@@ -206,14 +283,12 @@ where {
 }
 '''
 
-get_property_list_query = '''
-SELECT DISTINCT ?pred WHERE {
+get_property_list_query = '''SELECT DISTINCT ?pred WHERE {
   VALUES ?subj { <__URI__> }
   ?subj ?pred ?obj .
 }'''
 
-get_class_list_query = '''
-PREFIX owl: <http://www.w3.org/2002/07/owl#>
+get_class_list_query = '''PREFIX owl: <http://www.w3.org/2002/07/owl#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT DISTINCT ?class
@@ -222,6 +297,153 @@ WHERE {
  ?class a owl:Class.
   FILTER (! isBlank(?class) )
 }'''
+
+prefix_url_list = [
+  'http://bio2rdf.org/dbsnp:',
+  'http://bio2rdf.org/geneid:',
+  'http://ddbj.nig.ac.jp/ontologies/taxonomy/',
+  'http://glytoucan.org/Structures/Glycans/',
+  'http://glycosmos.org/disease/DOID:',
+  'http://glycosmos.org/glycogene/',
+  'http://icgc.link/Gene/',
+  'http://id.nlm.nih.gov/mesh/',
+  'http://linkedlifedata.com/resource/entrezgene/id/',
+  'http://linkedlifedata.com/resource/phenotype/id/HP:',
+  'http://linkedlifedata.com/resource/pubmed/id/',
+  'http://omabrowser.org/ontology/oma#GENE_',
+  'http://purl.jp/bio/101/opentggates/Probe/',
+  'http://purl.obolibrary.org/obo/CHEBI_',
+  'http://purl.obolibrary.org/obo/DOID_',
+  'http://purl.obolibrary.org/obo/GO_',
+  'http://purl.obolibrary.org/obo/GNO_',
+  'http://purl.obolibrary.org/obo/HP_',
+  'http://purl.obolibrary.org/obo/MONDO_',
+  'http://purl.obolibrary.org/obo/NCIT_',
+  'http://purl.obolibrary.org/obo/NCBITaxon_',
+  'http://purl.obolibrary.org/obo/UBERON_',
+  'http://purl.uniprot.org/enzyme/',
+  'http://purl.uniprot.org/geneid/',
+  'http://purl.uniprot.org/intact/',
+  'http://purl.uniprot.org/taxonomy/',
+  'http://purl.uniprot.org/uniprot/',
+  'http://rdf.ebi.ac.uk/resource/chembl/molecule/',
+  'http://rdf.ebi.ac.uk/resource/ensembl/',
+  'http://rdf.ebi.ac.uk/resource/ensembl/LRG_',
+  'http://rdf.glycoinfo.org/glycan/',
+  'http://rdf.ncbi.nlm.nih.gov/pubchem/compound/',
+  'http://rdf.ncbi.nlm.nih.gov/pubchem/gene/GID',
+  'http://rdf.ncbi.nlm.nih.gov/pubchem/inchikey/',
+  'http://rdf.ncbi.nlm.nih.gov/pubchem/protein/ACC',
+  'http://rdf.ncbi.nlm.nih.gov/pubchem/protein/EC_',
+  'http://rdf.ncbi.nlm.nih.gov/pubchem/taxonomy/TAXID',
+  'http://rdf.ncbi.nlm.nih.gov/pubmed/',
+  'http://www.ensembl.org/Homo_sapiens/Variation/Explore?v=',
+  'http://www.glytoucan.org/Structures/Glycans/',
+  'http://www.ncbi.nlm.nih.gov/SNP/snp_ref.cgi?rs=',
+  'http://www.ncbi.nlm.nih.gov/clinvar/?term=',
+  'http://www.snpedia.com/index.php/',
+  'http://www.berkeleybop.org/ontologies/owl/NCBITaxon#',
+  'http://bioportal.bioontology.org/ontologies/DOID/DOID:',
+  'http://identifiers.org/CHEBI:',
+  'http://identifiers.org/DOID:',
+  'http://identifiers.org/GO:',
+  'http://identifiers.org/HP:',
+  'http://identifiers.org/UBERON:',
+  'http://identifiers.org/affy.probeset/',
+  'http://identifiers.org/chembl.compound/',
+  'http://identifiers.org/ctd.gene/',
+  'http://identifiers.org/dbsnp/',
+  'http://identifiers.org/ensembl/',
+  'http://identifiers.org/fb/',
+  'http://identifiers.org/genewiki/',
+  'http://identifiers.org/glytoucan/',
+  'http://identifiers.org/intact/',
+  'http://identifiers.org/interpro/',
+  'http://identifiers.org/inchikey/',
+  'http://identifiers.org/lrg/LRG_',
+  'http://identifiers.org/mesh/',
+  'http://identifiers.org/mondo:',
+  'http://identifiers.org/ncbigene/',
+  'http://identifiers.org/ncbiprotein:',
+  'http://identifiers.org/ncit:',
+  'http://identifiers.org/obo.go/GO:',
+  'http://identifiers.org/oma.grp/',
+  'http://identifiers.org/pubmed/',
+  'http://identifiers.org/pubmed:',
+  'http://identifiers.org/taxonomy/',
+  'http://identifiers.org/uniprot/',
+  'http://identifiers.org/uniprot:',
+  'http://identifiers.org/wb/',
+  'http://purl.org/obo/owl/NCBITaxon#',
+  'https://identifiers.org/mondo:',
+  'https://www.bgee.org/bgee15_1/gene/',
+  'https://www.ebi.ac.uk/interpro/protein/reviewed/',
+  'https://www.ebi.ac.uk/intact/search?query='
+]
+
+def get_longest_matching_prefix(uri: str) -> str | None:
+    matched = [p for p in prefix_url_list if uri.startswith(p)]
+    return max(matched, key=len) if matched else None
+
+def issue_sparql_query_for_property_values(sparql_query: str) -> str:
+    """
+    Issue a SPARQL query to the specified endpoint and return the results.
+
+    Args:
+        sparql_query (str): The SPARQL query to execute.
+        endpoint (str): The SPARQL endpoint to query.
+
+    Returns:
+        str: The results of the SPARQL query in JSON format.
+    """
+    data = []
+    resp = httpx.post(
+        sparql_endpoint["fedx"],
+        data={"query": sparql_query},
+        headers={"Accept": "application/sparql-results+json",
+                 "Content-Type": "application/x-www-form-urlencoded"}
+    )
+    if resp.status_code == 200 and "json" in resp.headers.get("Content-Type", ""):
+        data = resp.json()
+        return json.dumps(data["results"]["bindings"])
+    else:
+        print("Bad response:\n", resp.text, file=sys.stderr)
+        return json.dumps(data)
+
+def issue_sparql_query_for_togoid(source_uri: str) -> List[str]:
+    """
+    Issue a SPARQL query to the RDF Portal primary endpoint to get TogoID relations.
+
+    Args:
+        source_uri (str): The URI to get equivalent URIs for.
+
+    Returns:
+        List[str]: A list of URIs from the results of the SPARQL query.
+    """
+    sparql_query = f'''SELECT distinct ?uri
+    WHERE {{ <{source_uri}> (<http://togoid.dbcls.jp/ontology#TIO_000001>|<http://togoid.dbcls.jp/ontology#TIO_000002>) ?uri }}'''
+
+    '''
+        async with httpx.AsyncClient() as client:
+        response = await client.get(
+            sparql_endpoint["pubchem"], params={"query": sparql_query, "format": "json"}
+        )
+    response.raise_for_status()
+    '''
+
+    data = []
+    resp = httpx.post(
+        sparql_endpoint["primary"],
+        data={"query": sparql_query},
+        headers={"Accept": "application/sparql-results+json",
+                 "Content-Type": "application/x-www-form-urlencoded"}
+    )
+    if resp.status_code == 200 and "json" in resp.headers.get("Content-Type", ""):
+        data = resp.json()
+        return [entry["uri"]["value"] for entry in data["results"]["bindings"]]
+    else:
+        print("Bad response:\n", resp.text, file=sys.stderr)
+        return data
 
 def issue_sparql_query(sparql_query: str, endpoint: str) -> str:
     data = []
@@ -237,6 +459,88 @@ def issue_sparql_query(sparql_query: str, endpoint: str) -> str:
     else:
         print("Bad response:\n", resp.text, file=sys.stderr)
         return data
+
+@server.tool()
+def get_synonym_URIs(src_uri: str) -> List[str]:
+    """
+    Get equivalent or synonym URIs for a given URI.
+
+    Args:
+        src_uri (str): The URI to get synonyms for.
+
+    Returns:
+        List[str]: A list of synonym URIs.
+    """
+    if not src_uri.startswith("http"):
+        raise ValueError("The URI must start with 'http' or 'https'.")
+
+    equivalent_uris = set()
+    for uri in _get_equivalent_uris(src_uri):
+        equivalent_uris.add(uri)
+        for togoid_uri in issue_sparql_query_for_togoid(uri):
+            equivalent_uris.add(togoid_uri)
+            for equivalent_uri in _get_equivalent_uris(togoid_uri):
+                equivalent_uris.add(equivalent_uri)
+    #print('\n'.join(equivalent_uris))
+    return list(equivalent_uris)
+
+@server.prompt(name="Get equivalent or synonym URIs")
+def get_prompt_for_synonym_URIs() -> str:
+    """
+    Prompt to get equivalent or synonym URIs.
+    This function will be used to get equivalent or synonym URIs for a given URI.
+    """
+    return '''When getting a prompt which has life scientific concepts such as genes, proteins, chemicals, species, anatomical ones, or diseases,
+    firstly you need to convert them to their corresponding URIs.
+
+    Next, use `get_synonym_URIs` to get conceptually equivalent but having different URIs (synonym URIs)
+    such as <http://rdf.ncbi.nlm.nih.gov/pubchem/compound/CID60823> and <https://identifiers.org/pubchem.compound:CID60823>, or
+    <http://rdf.ncbi.nlm.nih.gov/pubchem/compound/CID2244> and <http://identifiers.org/CHEBI:15365> .
+
+    Finally, use `get_property_values_from_RDF_Portal` to get property-value pairs of a given URI.
+    Notice that you can call `get_synonym_URIs` multiple times to get more comprehensive set of URIs.
+    '''
+
+@server.tool()
+def get_graph_prefix_relations() -> str:
+    f"""
+    Get the graph prefix relations in JSON format.
+    This data should be used to map a prefix to its corresponding graph URI.
+    And prefixes are to be used for constructing a SPARQL federated query to get semantically equivalent but having different prefix URIs
+    such as <http://rdf.ncbi.nlm.nih.gov/pubchem/compound/CID60823> and <https://identifiers.org/pubchem.compound:CID60823>.
+    When constructing such a federated query, use the following template with the fedx endpoint:
+
+    Returns:
+        str: The graph prefix relations in JSON format.
+    """
+    with open("graph_prefix_relations.txt", "r") as file:
+        lines = file.readlines()
+    relations = [line.strip().split("\t") for line in lines if line.strip()]
+    return json.dumps(relations)
+
+@server.tool()
+async def get_property_from_RDF_Portal(uri: str) -> str:
+    """
+    Get property values of a given uri string from RDF Portal.
+
+    Args:
+        uri (str): The URI to query.
+
+    Returns:
+        str: properties and their values in JSON format.
+    """
+    sparql_query = get_property_values_query.replace("__QUERY_URI__", uri)
+    return issue_sparql_query_for_property_values(sparql_query)
+
+@server.prompt(name="Get property-value pairs from RDF Portal")
+def get_prompt_for_property_values_from_RDF_Portal() -> str:
+    """
+    Prompt to get property-value pairs from RDF Portal.
+    This function will be used to build a SPARQL query to get property-value pairs of a given URI.
+    It is recommended to use `get_equivalent_uris` to get equivalent URIs before using this function.
+    This leads to a more comprehensive set of property-value pairs.
+    """
+    return '''Please provide a valid URI to get its property-value pairs from RDF Portal.'''
 
 @server.tool()
 async def execute_sparql_for_pubchem(sparql_query: str) -> str:
@@ -276,7 +580,7 @@ async def execute_sparql_for_pubchem(sparql_query: str) -> str:
             http://rdf.ncbi.nlm.nih.gov/pubchem/taxonomy
         Furthermore, when obtaining a protein data with UniProt ID, its prefix should be changed from http://purl.uniprot.org/uniprot/ to http://rdf.ncbi.nlm.nih.gov/pubchem/protein/ACC such as http://rdf.ncbi.nlm.nih.gov/pubchem/protein/ACCQ9Y6E7 for the UniProt ID of Q9Y6E7.
         Do not use the back-slash symbol to escape a double-quotation. There is no need to escape quotation and double-quotation marks.
-        You can use a shape expression of PubChem RDF by obtaining shex://shape-expression/pubchem.shexj
+        # You can use a shape expression of PubChem RDF by obtaining shex://shape-expression/pubchem.shexj
 
     Returns:
         str: The JSON-formatted result of the SPARQL query execution. If there are no results, an empty JSON object will be returned.
@@ -327,7 +631,7 @@ def get_compound_attributes_from_pubchem(pubchem_compound_id: str):
 def build_sparql_query() -> str:
     return "When building a SPARQL query, please refer a relevant shape expressions provided with the resource."
 
-@server.resource("shex://shape-expression/pubchem.shexj")
+#@server.resource("shex://shape-expression/pubchem.shexj")
 def get_shex() -> str:
     """Show a shape expression for PubChem RDF in JSON, which can be used to build a SPARQL query"""
     with open("/Users/yayamamo/git/mcp-pubchem/pubchem.shexj", "r") as file:
@@ -385,7 +689,7 @@ async def search_uniprot_property(query: str) -> str:
     Returns:
         URI: The UniProt property URI corresponding to the given query."
     """
-    return issue_sparql_query(get_proerty_query.replace('__QUERY_STR__', query), "uniprot")
+    return issue_sparql_query(get_property_query.replace('__QUERY_STR__', query), "uniprot")
 
 @server.resource("rdf://classes/list.json")
 async def search_class_list() -> str:
@@ -426,7 +730,7 @@ async def execute_sparql_uniprot(sparql_query: str) -> str:
     result = response.json()["results"]["bindings"]
     return json.dumps(result)
 
-@server.resource("shex://shape-expression/uniprot.shexj")
+#@server.resource("shex://shape-expression/uniprot.shexj")
 def get_shex() -> str:
     """Show a shape expression for UniProt RDF in JSON, which can be used to build a SPARQL query"""
     with open("/Users/yayamamo/git/mcp-sparql/uniprot.shexj", "r") as file:
