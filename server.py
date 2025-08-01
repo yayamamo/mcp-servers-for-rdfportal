@@ -545,7 +545,7 @@ def get_prompt_for_property_values_from_RDF_Portal() -> str:
 @server.tool()
 async def execute_sparql_for_pubchem(sparql_query: str) -> str:
     """
-    Execute a SPARQL query on RDF Portal PubChem endpoint.
+    Execute a SPARQL query on the RDF Portal PubChem endpoint.
 
     Args:
         sparql_query (str): The SPARQL query to execute.
@@ -631,10 +631,10 @@ def get_compound_attributes_from_pubchem(pubchem_compound_id: str):
 def build_sparql_query() -> str:
     return "When building a SPARQL query, please refer a relevant shape expressions provided with the resource."
 
-#@server.resource("shex://shape-expression/pubchem.shexj")
+@server.resource("shex://shape-expression/pubchem.shexj")
 def get_shex() -> str:
     """Show a shape expression for PubChem RDF in JSON, which can be used to build a SPARQL query"""
-    with open("/Users/yayamamo/git/mcp-pubchem/pubchem.shexj", "r") as file:
+    with open("pubchem.shexj", "r") as file:
         shex = file.read()
     return shex
 
@@ -677,7 +677,6 @@ async def search_uniprot_entity(query: str) -> str:
     """
     return await get_protein_id(query)
 
-
 @server.tool()
 async def search_uniprot_property(query: str) -> str:
     """
@@ -710,9 +709,9 @@ async def get_uniprot_properties(entity_uri: str) -> List[str]:
     return issue_sparql_query(get_property_list_query.replace('__QUERY_STR__', entity_uri), "uniprot")
 
 @server.tool()
-async def execute_sparql_uniprot(sparql_query: str) -> str:
+async def execute_sparql_for_uniprot(sparql_query: str) -> str:
     """
-    Execute a SPARQL query on RDF Portal.
+    Execute a SPARQL query on the RDF Portal UniProt (sib) endpoint.
     You can use a shape expression of UniProt RDF by obtaining shex://shape-expression/uniprot.shexj
 
     Args:
@@ -730,10 +729,10 @@ async def execute_sparql_uniprot(sparql_query: str) -> str:
     result = response.json()["results"]["bindings"]
     return json.dumps(result)
 
-#@server.resource("shex://shape-expression/uniprot.shexj")
+@server.resource("shex://shape-expression/uniprot.shexj")
 def get_shex() -> str:
     """Show a shape expression for UniProt RDF in JSON, which can be used to build a SPARQL query"""
-    with open("/Users/yayamamo/git/mcp-sparql/uniprot.shexj", "r") as file:
+    with open("uniprot.shexj", "r") as file:
         shex = file.read()
     return shex
 
