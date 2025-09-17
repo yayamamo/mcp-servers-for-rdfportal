@@ -3,7 +3,8 @@ import requests
 import httpx
 import json
 import xml.etree.ElementTree as ET
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
+#from mcp.server.fastmcp import FastMCP
 
 server = FastMCP("RDF Portal MCP Server")
 
