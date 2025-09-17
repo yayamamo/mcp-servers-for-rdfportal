@@ -299,10 +299,13 @@ async def search(query: str):
 
 
 @server.tool()
-async def fetch(identifier: str):
+async def fetch(idntifier: str):
     """
     Fetch detailed info for a given identifier or URI.
     Accepts any synonym (different prefix/naming scheme).
+
+    Args: identifier (str): identifier or URI for whith you want to get detailed information
+    Returns: JSON data whose keys are source, id, and summary
     """
     # 1. synonym展開
     synonyms = get_synonym_URIs(identifier)
