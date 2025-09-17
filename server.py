@@ -2,7 +2,8 @@ import requests
 import httpx
 import json
 import sys
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
+#from mcp.server.fastmcp import FastMCP
 from typing import List, Dict
 import xml.etree.ElementTree as ET
 from collections import defaultdict
@@ -776,4 +777,4 @@ async def search_pubmed_articles(pubmed_query: str) -> str:
     return json.dumps(ids)
 
 if __name__ == "__main__":
-    server.run()
+    server.run(transport="sse", host="0.0.0.0", port=8800)

@@ -299,16 +299,16 @@ async def search(query: str):
 
 
 @server.tool()
-async def fetch(idntifier: str):
+async def fetch(id: str):
     """
-    Fetch detailed info for a given identifier or URI.
+    Fetch detailed info for a given id or URI.
     Accepts any synonym (different prefix/naming scheme).
 
-    Args: identifier (str): identifier or URI for whith you want to get detailed information
+    Args: id (str): identifier or URI for whith you want to get detailed information
     Returns: JSON data whose keys are source, id, and summary
     """
     # 1. synonym展開
-    synonyms = get_synonym_URIs(identifier)
+    synonyms = get_synonym_URIs(id)
 
     # 2. DB判定 & 正規化
     source, canonical = None, None
@@ -325,7 +325,7 @@ async def fetch(idntifier: str):
     elif source == "pubchem":
         return await pubchem_fetch(canonical.split("CID")[-1])
     else:
-        raise ValueError(f"Cannot resolve source for identifier: {identifier}")
+        raise ValueError(f"Cannot resolve source for identifier: {id}")
 
 
 # ======== Entrypoint =========
