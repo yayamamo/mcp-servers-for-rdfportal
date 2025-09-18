@@ -1,11 +1,24 @@
+import logging
+from typing import Dict, List, Any
 import sys
 import requests
 import httpx
 import xml.etree.ElementTree as ET
 from fastmcp import FastMCP
-#from mcp.server.fastmcp import FastMCP
+import asyncio
 
-server = FastMCP("RDF Portal MCP Server")
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+server_instructions = """
+This MCP server provides search and data retrieval capabilities
+for deep research. Use the search tool to find relevant identifiers
+based on keywords, then use the fetch tool to retrieve corresponding 
+data.
+"""
+
+server = FastMCP(name = "RDF Portal MCP Server", instructions=server_instructions)
 
 # ======== 既存の get_synonym_URIs を利用 =========
 sparql_endpoint = {
@@ -77,6 +90,12 @@ equivalent_prefix_pairs = [
       ['http://glytoucan.org/Structures/Glycans/', 'http://identifiers.org/glytoucan/'],
       ['http://purl.obolibrary.org/obo/GNO_', 'http://identifiers.org/glytoucan/'],
 ]
+
+prefixes = {
+        "pubmed": "http://identifiers.org/pubmed/",
+        "uniprot": "http://identifiers.org/uniprot/",
+        "pubchem_cid": "http://identifiers.org/pubchem.compound/",
+        } 
 
 class UnionFind:
     def __init__(self):
@@ -172,8 +191,13 @@ def get_synonym_URIs(src_uri: str) -> List[str]:
         List[str]: A list of synonym URIs.
     """
     if not src_uri.startswith("http"):
-        raise ValueError("The URI must start with 'http' or 'https'.")
+        prefix = src_uri.split(":", 1)[0]
+        if prefix in prefixes.keys():
+            src_uri = prefixes[prefix] + src_uri.split(":", 1)[1]
+        else:
+            return []
 
+    logger.info(f'get_sym:src_uri->{src_uri}')
     equivalent_uris = set()
     for uri in _get_equivalent_uris(src_uri):
         equivalent_uris.add(uri)
@@ -202,15 +226,16 @@ async def pubmed_search(query: str):
             entrez_endpoint + "/esearch.fcgi",
             params={"db": "pubmed", "term": query, "usehistory": "n"}
         )
-    response.raise_for_status()
+    #response.raise_for_status()
     tree = ET.ElementTree(ET.fromstring(response.text))
     ids = [elem.text for elem in tree.find("IdList").findall("Id")]
-    return [{"source": "pubmed", "id": f"http://identifiers.org/pubmed:{pid}", "summary": f"PubMed article {pid}"} for pid in ids]
+    #return [{"source": "pubmed", "id": f"http://identifiers.org/pubmed:{pid}", "summary": f"PubMed article {pid}"} for pid in ids]
+    return [{"id": f"pubmed:{pid}", "source": "pubmed", "summary": f"PubMed article {pid}"} for pid in ids]
 
 async def pubmed_fetch(pubmed_id: str):
     async with httpx.AsyncClient() as client:
         response = await client.get(f"https://togows.org/entry/pubmed/{pubmed_id}.json")
-    response.raise_for_status()
+    #response.raise_for_status()
     data = response.json()[0] if response.json() else {}
     return {
         "id": pubmed_id,
@@ -224,23 +249,20 @@ async def uniprot_search(query: str):
     url = "https://rest.uniprot.org/uniprotkb/search"
     params = {"query": query, "fields": "accession,protein_name,gene_names,organism_name", "format": "json", "size": 10}
     response = requests.get(url, params=params)
-    response.raise_for_status()
+    #response.raise_for_status()
     data = response.json()
     results = []
     for entry in data.get("results", []):
         uid = entry.get("primaryAccession")
         pname = entry.get("proteinDescription", {}).get("recommendedName", {}).get("fullName", {}).get("value", "")
-        results.append({
-            "source": "uniprot",
-            "id": f"http://purl.uniprot.org/uniprot/{uid}",
-            "summary": pname
-        })
+#        results.append({ "source": "uniprot", "id": f"http://purl.uniprot.org/uniprot/{uid}", "summary": pname })
+        results.append({"id": f"uniprot:{uid}", "source": "uniprot", "summary": pname})
     return results
 
 async def uniprot_fetch(uniprot_id: str):
     url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
     response = requests.get(url)
-    response.raise_for_status()
+    #response.raise_for_status()
     data = response.json()
     return {
         "id": uniprot_id,
@@ -253,15 +275,16 @@ async def uniprot_fetch(uniprot_id: str):
 async def pubchem_search(query: str):
     url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{query}/cids/JSON"
     response = requests.get(url)
-    response.raise_for_status()
+    #response.raise_for_status()
     data = response.json()
     ids = data.get("IdentifierList", {}).get("CID", [])
-    return [{"source": "pubchem", "id": f"http://rdf.ncbi.nlm.nih.gov/pubchem/compound/CID{cid}", "summary": f"Compound CID {cid}"} for cid in ids]
+    #return [{"source": "pubchem", "id": f"http://rdf.ncbi.nlm.nih.gov/pubchem/compound/CID{cid}", "summary": f"Compound CID {cid}"} for cid in ids]
+    return [{"id": f"pubchem_cid:{cid}", "source": "pubchem", "summary": f"Compound CID {cid}"} for cid in ids]
 
 async def pubchem_fetch(cid: str):
     url = "https://togodx.dbcls.jp/human/sparqlist/api/metastanza_pubchem_compound"
     response = requests.get(url, params={"id": cid})
-    response.raise_for_status()
+    #response.raise_for_status()
     data = response.json()
     return {
         "id": cid,
@@ -282,24 +305,28 @@ def resolve_source_from_uri(uri: str) -> str:
 
 # ======== 共通ツール =========
 
-@server.tool()
-async def search(query: str):
+@server.tool(name="search")
+async def search(query: str) -> Dict[str, List[Dict[str, Any]]]:
     """
     Search across multiple biomedical databases (PubMed, UniProt, PubChem).
     Synonym URIs are expanded using get_synonym_URIs.
     """
     results = []
-    results.extend(await pubmed_search(query))
-    results.extend(await uniprot_search(query))
-    results.extend(await pubchem_search(query))
+    try:
+        results.extend(await pubmed_search(query))
+        results.extend(await uniprot_search(query))
+        results.extend(await pubchem_search(query))
+    except Exception as e:
+        results.extend([])
 
     for r in results:
+        logger.info(f'id->{r["id"]}')
         r["synonyms"] = get_synonym_URIs(r["id"])
-    return results
+    return {"results": results}
 
 
-@server.tool()
-async def fetch(id: str):
+@server.tool(name="fetch")
+async def fetch(id: str) -> Dict[str, Any]:
     """
     Fetch detailed info for a given id or URI.
     Accepts any synonym (different prefix/naming scheme).
@@ -317,17 +344,30 @@ async def fetch(id: str):
         if src != "unknown":
             source, canonical = src, u
             break
+    if id.startswith("pubmed:"):
+        return await pubmed_fetch(id.split(":", 1)[1])
 
-    if source == "pubmed":
-        return await pubmed_fetch(canonical.split(":")[-1])
-    elif source == "uniprot":
-        return await uniprot_fetch(canonical.split("/")[-1])
-    elif source == "pubchem":
-        return await pubchem_fetch(canonical.split("CID")[-1])
+    elif id.startswith("uniprot:"):
+        return await uniprot_fetch(id.split(":", 1)[1])
+
+    elif id.startswith("pubchem_cid:"):
+        return await pubchem_fetch(id.split(":", 1)[1])
+
     else:
         raise ValueError(f"Cannot resolve source for identifier: {id}")
 
 
 # ======== Entrypoint =========
 if __name__ == "__main__":
-    server.run(transport="sse", host="0.0.0.0", port=8800)
+    # Configure and start the server
+    logger.info("Starting MCP server on 0.0.0.0:8800")
+    logger.info("Server will be accessible via SSE transport")
+
+    try:
+      # Use FastMCP's built-in run method with SSE transport
+      server.run(transport="sse", host="0.0.0.0", port=8800)
+    except KeyboardInterrupt:
+      logger.info("Server stopped by user")
+    except Exception as e:
+      logger.error(f"Server error: {e}")
+      raise
